@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "KoyamRate (Secure)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define", "SUPABASE_URL=https://ivhezxezaunyohypmswd.supabase.co",
+        "--dart-define", "SUPABASE_ANON_KEY=sb_publishable_TpFmiZ1sS0itgOBp7KQIvA_T4g-J_4G"
+      ]
+    }
+  ]
+}
