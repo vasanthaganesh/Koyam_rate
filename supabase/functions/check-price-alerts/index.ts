@@ -18,40 +18,35 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 1. Get today's prices (in IST)
+    // 1. Get the updated price from the Webhook payload
+    const payload = await req.json()
+    const { record: updatedPrice } = payload
+    
+    if (!updatedPrice || !updatedPrice.item_eng) {
+       console.log("No valid price record in payload")
+       return new Response(JSON.stringify({ success: false, message: 'No price record' }), {
+         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+         status: 200,
+       })
+    }
+
+    console.log(`🔍 Checking alerts for: ${updatedPrice.item_eng}`)
+
+    // 2. Get today's IST date string
     const now = new Date()
     const istOffset = 5.5 * 60 * 60 * 1000 // UTC+5:30
     const istDate = new Date(now.getTime() + istOffset)
     const today = istDate.toISOString().split('T')[0]
-    const { data: prices, error: pricesError } = await supabaseClient
-      .from('prices')
-      .select('*')
-      .eq('date', today)
 
-    if (pricesError) throw pricesError
-    if (!prices || prices.length === 0) {
-      return new Response(JSON.stringify({ success: true, notifications_sent: 0, message: 'No prices for today yet.' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
-    }
-
-    // 2. Get existing unread notifications for deduplication
-    const { data: existingNotifications, error: existingError } = await supabaseClient
-      .from('notifications_queue')
-      .select('user_id, item_id')
-      .eq('is_read', false)
-
-    if (existingError) throw existingError
-
-    // 3. Process alerts in paginated batches
+    // 3. Process all alerts for this SPECIFIC item
     const notifications: any[] = []
     let from = 0
-
+    
     while (true) {
       const { data: alerts, error: alertsError } = await supabaseClient
         .from('price_alerts')
         .select('*')
+        .eq('item_name_eng', updatedPrice.item_eng)
         .eq('notify_active', true)
         .range(from, from + PAGE_SIZE - 1)
 
@@ -59,30 +54,37 @@ Deno.serve(async (req) => {
       if (!alerts || alerts.length === 0) break
 
       for (const alert of alerts) {
-        const price = prices.find((p: any) => p.item_eng === alert.item_name_eng)
-        if (!price) continue
-
         let trigger = false
         let condition = ''
 
-        if (alert.min_price && price.min_price < alert.min_price) {
+        if (alert.min_price && updatedPrice.min_price < alert.min_price) {
           trigger = true
-          condition = `dropped to ₹${price.min_price} (Target: ₹${alert.min_price})`
-        } else if (alert.max_price && price.max_price > alert.max_price) {
+          condition = `dropped to ₹${updatedPrice.min_price} (Target: ₹${alert.min_price})`
+        } else if (alert.max_price && updatedPrice.max_price > alert.max_price) {
           trigger = true
-          condition = `rose to ₹${price.max_price} (Target: ₹${alert.max_price})`
+          condition = `rose to ₹${updatedPrice.max_price} (Target: ₹${alert.max_price})`
         }
 
         if (trigger) {
-          const isDuplicate = existingNotifications?.some(
-            (n: any) => n.user_id === alert.user_id && n.item_id === alert.item_id
-          )
-          if (isDuplicate) continue
+          // Deduplicate: Check if we sent an alert for this user/item TODAY
+          const { data: existing, error: dupError } = await supabaseClient
+            .from('notifications_queue')
+            .select('id')
+            .eq('user_id', alert.user_id)
+            .eq('item_id', alert.item_id)
+            .gte('created_at', today)
+            .limit(1)
+
+          if (dupError) throw dupError
+          if (existing && existing.length > 0) {
+            console.log(`⏩ Skipping duplicate for ${alert.user_id}/${updatedPrice.item_eng} today`)
+            continue
+          }
 
           notifications.push({
             user_id: alert.user_id,
             title: '🔥 Price Alert!',
-            body: `${alert.item_name_eng} price ${condition}!`,
+            body: `${updatedPrice.item_eng} price ${condition}!`,
             item_id: alert.item_id,
             type: 'price_alert'
           })
@@ -100,6 +102,7 @@ Deno.serve(async (req) => {
         .insert(notifications)
       
       if (notifyError) throw notifyError
+      console.log(`✅ Sent ${notifications.length} notifications`)
     }
 
     return new Response(JSON.stringify({ success: true, notifications_sent: notifications.length }), {
@@ -107,6 +110,7 @@ Deno.serve(async (req) => {
       status: 200,
     })
   } catch (error) {
+    console.error(`❌ Edge Function Error: ${error.message}`)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
