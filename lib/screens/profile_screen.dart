@@ -8,6 +8,7 @@ import '../services/price_service.dart';
 import '../providers/price_alert_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
+import '../providers/language_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_wrapper.dart';
 
@@ -20,7 +21,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final PriceService _service = PriceService();
-  bool _isTamil = false;
   bool _notificationsEnabled = true;
 
   String _locationName = 'Fetching location...';
@@ -35,11 +35,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _loadSettings() async {
-    final tamil = await _service.isTamil();
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _isTamil = tamil;
         _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       });
     }
@@ -120,15 +118,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isTamil = ref.watch(languageProvider);
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       body: SafeArea(
-        child: _isLoggedIn ? _buildProfileContent() : _buildLoginPrompt(),
+        child: _isLoggedIn ? _buildProfileContent(isTamil) : _buildLoginPrompt(isTamil),
       ),
     );
   }
 
-  Widget _buildLoginPrompt() {
+  Widget _buildLoginPrompt(bool isTamil) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -151,15 +150,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: const Icon(Icons.account_circle_outlined, size: 80, color: AppColors.primary),
             ),
             const SizedBox(height: 32),
-            const Text(
-              'Sign in to KoyamRate',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+            Text(
+              isTamil ? 'உள்நுழையவும்' : 'Sign in to KoyamRate',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Save your favorites and get personalized price alerts.',
+            Text(
+              isTamil ? 'உங்களுக்குப் பிடித்தவைகளைச் சேமிக்கவும்.' : 'Save your favorites and get personalized price alerts.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 40),
             SizedBox(
@@ -177,7 +176,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     color: Color(0xFF4285F4),
                   ),
                 ),
-                label: const Text('Sign in with Google'),
+                label: Text(isTamil ? 'கூகுள் மூலம் தொடரவும்' : 'Sign in with Google'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: AppColors.textPrimary,
@@ -251,7 +250,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  Widget _buildProfileContent() {
+  Widget _buildProfileContent(bool isTamil) {
     return RefreshIndicator(
       onRefresh: () async {
         await _initLocation();
@@ -345,14 +344,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _buildMenuItem(
               icon: Icons.language,
               iconColor: Colors.indigo,
-              label: 'Language',
-              trailing: _buildLanguageToggle(),
+              label: isTamil ? 'மொழி' : 'Language',
+              trailing: _buildLanguageToggle(isTamil),
             ),
             const SizedBox(height: 12),
             _buildMenuItem(
               icon: Icons.notifications_none_rounded,
               iconColor: Colors.blue,
-              label: 'Notifications',
+              label: isTamil ? 'அறிவிப்புகள்' : 'Notifications',
               onTap: () {
                 debugPrint('🔔 User manually checking for notifications...');
                 ref.read(priceAlertProvider.notifier).checkPendingNotifications();
@@ -372,14 +371,56 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _buildMenuItem(
               icon: Icons.info_outline_rounded,
               iconColor: Colors.orange,
-              label: 'Data Source',
-              subtitle: 'Powered by MMC KWMC Official Portal',
+              label: isTamil ? 'தகவல் ஆதாரம்' : 'Data Source',
+              subtitle: isTamil ? 'அதிகாரப்பூர்வ MMC KWMC தளம் மூலம்' : 'Powered by MMC KWMC Official Portal',
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Data Source / தகவல் ஆதாரம்', style: TextStyle(fontWeight: FontWeight.bold)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    content: const SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'English:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'Prices sourced from official Tamil Nadu Government (KWMC). For information only. Not responsible for any loss.',
+                            style: TextStyle(fontSize: 14, height: 1.4),
+                          ),
+                          SizedBox(height: 20),
+                          Text(
+                            'தமிழ்:',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.primary),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'விலைகள் அரசு அதிகாரப்பூர்வ KWMC தளத்திலிருந்து எடுக்கப்பட்டவை. தகவல் நோக்கத்திற்கு மட்டும். எந்த நஷ்டத்திற்கும் பொறுப்பல்ல.',
+                            style: TextStyle(fontSize: 14, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close / மூடு', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary)),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 12),
             _buildMenuItem(
               icon: Icons.privacy_tip_outlined,
               iconColor: Colors.teal,
-              label: 'Privacy Policy',
+              label: isTamil ? 'தனியுரிமைக் கொள்கை' : 'Privacy Policy',
               onTap: () {
                 showDialog(
                   context: context,
@@ -421,7 +462,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   }
                 },
                 icon: const Icon(Icons.logout, color: Colors.redAccent),
-                label: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700, fontSize: 16)),
+                label: Text(isTamil ? 'வெளியேறு' : 'Logout', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700, fontSize: 16)),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -441,7 +482,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               child: TextButton(
                 onPressed: () => _showDeleteAccountDialog(context),
                 child: Text(
-                  'Delete Account & Data',
+                  isTamil ? 'கணக்கை நீக்கு' : 'Delete Account & Data',
                   style: TextStyle(
                     color: Colors.red.withValues(alpha: 0.6),
                     fontSize: 13,
@@ -586,7 +627,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildLanguageToggle() {
+  Widget _buildLanguageToggle(bool isTamil) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
@@ -596,8 +637,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildToggleOption('ENG', !_isTamil),
-          _buildToggleOption('TAM', _isTamil),
+          _buildToggleOption('ENG', !isTamil),
+          _buildToggleOption('TAM', isTamil),
         ],
       ),
     );
@@ -605,10 +646,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   Widget _buildToggleOption(String label, bool isSelected) {
     return GestureDetector(
-      onTap: () async {
-        final isTamil = label == 'TAM';
-        await _service.setLanguage(isTamil);
-        setState(() => _isTamil = isTamil);
+      onTap: () {
+        final isTamilSelect = label == 'TAM';
+        ref.read(languageProvider.notifier).setLanguage(isTamilSelect);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

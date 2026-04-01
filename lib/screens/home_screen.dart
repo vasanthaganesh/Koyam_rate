@@ -6,6 +6,7 @@ import '../services/price_service.dart';
 import '../providers/favorites_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
+import '../providers/language_provider.dart';
 import 'detail_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -23,7 +24,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<VegetablePrice> _filtered = [];
   String _selectedCategory = 'all';
   bool _isLoading = true;
-  bool _isTamil = false;
   String? _error;
 
   final List<Map<String, String>> _categories = [
@@ -46,12 +46,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     try {
       final prices = await _service.fetchPrices();
-      final isTamil = await _service.isTamil();
       if (mounted) {
         setState(() {
           _prices = prices;
           _filtered = prices;
-          _isTamil = isTamil;
           _isLoading = false;
         });
       }
@@ -94,31 +92,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isTamil = ref.watch(languageProvider);
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(),
-            _buildSearchBar(),
-            _buildCategoryTabs(),
-            _buildUpdateBanner(),
-            Expanded(child: _buildBody()),
+            _buildSearchBar(isTamil),
+            _buildCategoryTabs(isTamil),
+            _buildUpdateBanner(isTamil),
+            Expanded(child: _buildBody(isTamil)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(bool isTamil) {
     if (_isLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(height: 16),
-            Text('Loading market rates...', style: TextStyle(color: Colors.grey)),
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 16),
+            Text(isTamil ? 'விலைப்பட்டியல் பதிவிறங்குகிறது...' : 'Loading market rates...', style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );
@@ -159,7 +158,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return _buildGrid();
+    return _buildGrid(isTamil);
   }
 
   Widget _buildHeader() {
@@ -191,7 +190,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(bool isTamil) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
@@ -202,7 +201,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: TextField(
           controller: _searchCtrl,
           decoration: InputDecoration(
-            hintText: 'Search vegetables...',
+            hintText: isTamil ? 'காய்கறிகளைத் தேடுக...' : 'Search vegetables...',
             hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
             prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
             border: InputBorder.none,
@@ -213,7 +212,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildCategoryTabs() {
+  Widget _buildCategoryTabs(bool isTamil) {
     return SizedBox(
       height: 48,
       child: ListView.separated(
@@ -224,6 +223,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         itemBuilder: (context, i) {
           final cat = _categories[i];
           final isSelected = _selectedCategory == cat['key'];
+          
+          String getLabel() {
+            if (!isTamil) return cat['label']!;
+            if (cat['key'] == 'all') return 'அனைத்தும்';
+            if (cat['key'] == 'vegetables') return 'காய்கறிகள்';
+            return cat['label']!;
+          }
+
           return GestureDetector(
             onTap: () => _selectCategory(cat['key']!),
             child: AnimatedContainer(
@@ -238,7 +245,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               child: Center(
                 child: Text(
-                  cat['label']!,
+                  getLabel(),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -253,45 +260,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  String _formatLastUpdated() {
-    if (_prices.isEmpty) return 'Syncing...';
+  String _formatLastUpdated(bool isTamil) {
+    if (_prices.isEmpty) return isTamil ? 'புதுப்பிக்கப்படுகிறது...' : 'Syncing...';
     final marketDate = _prices.first.date;
-    if (marketDate.isEmpty) return 'Live Sync';
+    if (marketDate.isEmpty) return isTamil ? 'நேரலை' : 'Live Sync';
     
     try {
       final dateObj = DateTime.parse(marketDate);
       final now = DateTime.now();
       if (dateObj.year == now.year && dateObj.month == now.month && dateObj.day == now.day) {
-        return 'Updated Today';
+        return isTamil ? 'இன்று புதுப்பிக்கப்பட்டது' : 'Updated Today';
       }
-      return 'Updated on $marketDate';
+      return isTamil ? '$marketDate அன்று புதுப்பிக்கப்பட்டது' : 'Updated on $marketDate';
     } catch (_) {
-      return 'Updated on $marketDate';
+      return isTamil ? '$marketDate அன்று புதுப்பிக்கப்பட்டது' : 'Updated on $marketDate';
     }
   }
 
-  Widget _buildUpdateBanner() {
+  Widget _buildUpdateBanner(bool isTamil) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          RichText(
-            text: TextSpan(
-              children: [
-                const TextSpan(
-                  text: 'Daily Market Rates  ',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                ),
-                TextSpan(
-                  text: '${_prices.length} items',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
-                ),
-              ],
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: isTamil ? 'தினசரி சந்தை விலை  ' : 'Daily Market Rates  ',
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                  ),
+                  TextSpan(
+                    text: isTamil ? '${_prices.length} பொருட்கள்' : '${_prices.length} items',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
             ),
           ),
           Text(
-            _formatLastUpdated(),
+            _formatLastUpdated(isTamil),
             style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade600),
           ),
         ],
@@ -299,7 +308,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildGrid() {
+  Widget _buildGrid(bool isTamil) {
     if (_filtered.isEmpty) {
       return Center(
         child: Column(
@@ -307,7 +316,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             Icon(Icons.search_off, size: 48, color: Colors.grey.shade400),
             const SizedBox(height: 12),
-            Text('No items found', style: TextStyle(color: Colors.grey.shade500)),
+            Text(isTamil ? 'பொருட்கள் இல்லை' : 'No items found', style: TextStyle(color: Colors.grey.shade500)),
           ],
         ),
       );
@@ -325,7 +334,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           childAspectRatio: 0.72,
         ),
         itemCount: _filtered.length,
-        itemBuilder: (context, i) => _buildVegCard(_filtered[i]),
+        itemBuilder: (context, i) => _buildVegCard(_filtered[i], isTamil),
       ),
     );
   }
@@ -339,7 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return 'assets/images/vegetables/$fileName.png';
   }
 
-  Widget _buildVegCard(VegetablePrice item) {
+  Widget _buildVegCard(VegetablePrice item, bool isTamil) {
     // Watch relevant part of state only
     final isFav = ref.watch(favoritesProvider.select(
       (data) => data.value?.contains(item.id) ?? false
@@ -418,14 +427,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            _isTamil ? item.itemTamil : item.itemEng,
+            isTamil ? item.itemTamil : item.itemEng,
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
-            _isTamil ? item.itemEng : item.itemTamil,
+            isTamil ? item.itemEng : item.itemTamil,
             style: const TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,

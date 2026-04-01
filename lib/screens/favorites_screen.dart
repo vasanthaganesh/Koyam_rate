@@ -5,6 +5,7 @@ import '../models/vegetable_price.dart';
 import '../providers/favorites_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
+import '../providers/language_provider.dart';
 import 'detail_screen.dart';
 import 'auth_wrapper.dart';
 
@@ -19,6 +20,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   @override
   Widget build(BuildContext context) {
     final favoritesAsync = ref.watch(favoriteItemsProvider);
+    final isTamil = ref.watch(languageProvider);
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -32,9 +34,9 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Favorites & Watchlist',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                  Text(
+                    isTamil ? 'விருப்பங்கள்' : 'Favorites & Watchlist',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                   ),
                   Container(
                     width: 40, height: 40,
@@ -51,8 +53,8 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
             Expanded(
               child: favoritesAsync.when(
                 data: (favorites) => favorites.isEmpty
-                    ? _buildEmptyState()
-                    : _buildGrid(favorites),
+                    ? _buildEmptyState(isTamil)
+                    : _buildGrid(favorites, isTamil),
                 loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
                 error: (err, stack) => Center(child: Text('Error loading favorites: $err')),
               ),
@@ -63,7 +65,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool isTamil) {
     final isGuest = Supabase.instance.client.auth.currentUser == null;
     
     if (isGuest) {
@@ -74,12 +76,12 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
             Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
             Text(
-              'Login Required',
+              isTamil ? 'உள்நுழைய வேண்டும்' : 'Login Required',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 8),
             Text(
-              'Sign in to view and save your favorite items.',
+              isTamil ? 'உங்களுக்குப் பிடித்தவைகளைப் பார்க்கவும் சேமிக்கவும் உள்நுழையவும்.' : 'Sign in to view and save your favorite items.',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
             ),
             const SizedBox(height: 24),
@@ -88,7 +90,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 // Return to login screen
                 ref.read(guestModeProvider.notifier).setGuestMode(false);
               },
-              child: const Text('Login Now'),
+              child: Text(isTamil ? 'இப்போது உள்நுழைக' : 'Login Now'),
             )
           ],
         ),
@@ -102,12 +104,12 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           Icon(Icons.favorite_border, size: 64, color: Colors.grey.shade300),
           const SizedBox(height: 16),
           Text(
-            'No favorites yet',
+            isTamil ? 'உங்களுக்கு பிடித்தவை எதுவும் இல்லை' : 'No favorites yet',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap the ❤️ on any vegetable to save it here',
+            isTamil ? 'எந்த காய்கறியிலும் ❤️ என்பதைத் தட்டி இங்கே சேமிக்கவும்' : 'Tap the ❤️ on any vegetable to save it here',
             style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
           ),
         ],
@@ -122,14 +124,14 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         .replaceAll(RegExp(r'^_|_$'), '');
   }
 
-  Widget _buildGrid(List<VegetablePrice> favorites) {
+  Widget _buildGrid(List<VegetablePrice> favorites, bool isTamil) {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 14,
         mainAxisSpacing: 14,
-        childAspectRatio: 0.78,
+        childAspectRatio: 0.76,
       ),
       itemCount: favorites.length,
       itemBuilder: (context, i) {
@@ -181,8 +183,18 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(item.itemEng, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 4),
+              Text(
+                isTamil ? item.itemTamil : item.itemEng,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                isTamil ? item.itemEng : item.itemTamil,
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 6),
               Text('₹${item.avgPrice.toInt()}/kg', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)),
             ],
           ),
