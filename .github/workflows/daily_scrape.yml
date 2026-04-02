@@ -8,6 +8,9 @@ on:
 jobs:
   scrape:
     runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash  # force Git Bash on Windows — PowerShell can't run $(), date -u, or grep
     steps:
       - uses: actions/checkout@v4
         with:
