@@ -8,9 +8,8 @@ on:
 jobs:
   scrape:
     runs-on: self-hosted
-    defaults:
-      run:
-        shell: bash  # force Git Bash on Windows — PowerShell can't run $(), date -u, or grep
+    # No defaults shell — use pwsh explicitly on steps that need scripting;
+    # npm/node steps use the runner default (cmd) where PATH is already set.
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,54 +21,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
+
       - name: Install Dependencies
         run: |
           cd scraper
           npm install
-          
+
       - name: Run Scraper
-        id: scrape  # id required to expose step outputs for the success alert
-        # Deployed migration to price_history table on 2026-04-02
+        id: scrape  # id required so later steps can read outputs.rows
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # We don't need the actual .env file on GitHub because we're passing secrets directly
+        shell: pwsh  # PowerShell — node/npm are in PATH here on Windows runner
         run: |
-          # Capture scraper stdout so we can extract the inserted row count
-          OUTPUT=$(node scraper/scrape_and_upsert.mjs 2>&1)
-          echo "$OUTPUT"
-          # Parse "Inserted New:  N" from scraper log and expose as step output
-          ROWS=$(echo "$OUTPUT" | grep -oP '(?<=Inserted New:\s{1,10})\d+' | tail -1)
-          echo "rows=${ROWS:-0}" >> $GITHUB_OUTPUT
+          # Capture scraper output and parse inserted row count
+          $OUTPUT = node scraper/scrape_and_upsert.mjs 2>&1
+          Write-Output $OUTPUT
+          $match = $OUTPUT | Select-String -Pattern 'Inserted New:\s+(\d+)'
+          $ROWS = if ($match) { $match.Matches[0].Groups[1].Value } else { '0' }
+          echo "rows=$ROWS" >> $env:GITHUB_OUTPUT
 
-      # ── Success alert ────────────────────────────────────────────────────────
+      # ── Success alert ──────────────────────────────────────────────────────────
       - name: Telegram — Scraper OK
-        if: success()  # fires only when all previous steps succeeded
+        if: success()  # fires only when all previous steps passed
+        shell: pwsh    # use PowerShell so Invoke-RestMethod is available
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # loaded from GitHub secret
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # loaded from GitHub secret
-          ROWS: ${{ steps.scrape.outputs.rows }}                  # row count from scraper output
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ROWS: ${{ steps.scrape.outputs.rows }}
         run: |
-          # Build and POST a short success message to Telegram
-          DATE=$(date -u '+%Y-%m-%d')
-          MSG="✅ *KoyamRate scraper OK*%0ADate: ${DATE}%0ARows inserted: ${ROWS}%0ARun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -s --fail-with-body \
-            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${MSG}\",\"parse_mode\":\"Markdown\"}"
+          $DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          $RUN_URL = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $TEXT = "✅ KoyamRate scraper OK`nDate: $DATE`nRows inserted: $env:ROWS`nRun: $RUN_URL"
+          $body = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          Invoke-RestMethod -Uri "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/sendMessage" `
+            -Method Post -ContentType 'application/json' -Body $body
 
-      # ── Failure alert ────────────────────────────────────────────────────────
+      # ── Failure alert ──────────────────────────────────────────────────────────
       - name: Telegram — Scraper FAILED
         if: failure()  # fires only when a previous step in this job has failed
+        shell: pwsh    # use PowerShell so Invoke-RestMethod is available
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # loaded from GitHub secret
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # loaded from GitHub secret
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # Build and POST a failure alert to Telegram
-          DATE=$(date -u '+%Y-%m-%d')
-          MSG="❌ *KoyamRate scraper FAILED*%0ARun date: ${DATE}%0ARun ID: ${{ github.run_id }}%0AView run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}%0A%0A⚠️ Check if the portal token endpoint changed."
-          curl -s --fail-with-body \
-            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${MSG}\",\"parse_mode\":\"Markdown\"}"
+          $DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          $RUN_URL = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $TEXT = "❌ KoyamRate scraper FAILED`nRun date: $DATE`nRun ID: ${{ github.run_id }}`nView run: $RUN_URL`n`n⚠️ Check if the portal token endpoint changed."
+          $body = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          Invoke-RestMethod -Uri "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/sendMessage" `
+            -Method Post -ContentType 'application/json' -Body $body
