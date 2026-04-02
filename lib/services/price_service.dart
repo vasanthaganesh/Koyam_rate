@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,10 +17,11 @@ class PriceService {
 
   // ── Prices (Supabase) ──
 
-  Future<List<VegetablePrice>> fetchPrices({String? category}) async {
+  /// Fetches the latest prices, falling back to the most recent previous date if today is empty.
+  Future<(List<VegetablePrice>, DateTime?)> fetchPrices({String? category}) async {
     try {
       final today = DateTime.now().toIso8601String().substring(0, 10);
-      var query = _client.from('prices').select().eq('date', today);
+      var query = _client.from('prices_latest').select().eq('date', today);
 
       if (category != null && category != 'all') {
         query = query.eq('category', category);
@@ -27,29 +29,88 @@ class PriceService {
 
       final List<dynamic> response = await query.order('item_eng', ascending: true);
 
-      if (response.isEmpty) {
-        // Fallback to most recent data if today's scrape hasn't happened
-        final List<dynamic> fallback = await _client
-            .from('prices')
-            .select()
-            .order('date', ascending: false)
-            .limit(32);
-        return fallback.map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>)).toList();
-      }
+      List<VegetablePrice> results;
+      DateTime? dataDate;
 
-      return response
-          .map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>))
-          .toList();
+      if (response.isEmpty) {
+        final maxDateRes = await _client
+            .from('price_history')
+            .select('date')
+            .order('date', ascending: false)
+            .limit(1);
+
+        if (maxDateRes.isEmpty) {
+          return ([], null);
+        }
+
+        final fallbackDateStr = maxDateRes[0]['date'] as String;
+        dataDate = DateTime.tryParse(fallbackDateStr);
+
+        var fallbackQuery = _client
+            .from('prices_latest')
+            .select()
+            .eq('date', fallbackDateStr);
+        // REMOVED: magic number limit(32)
+
+        if (category != null && category != 'all') {
+          fallbackQuery = fallbackQuery.eq('category', category);
+        }
+
+        final fallback = await fallbackQuery.order('item_eng', ascending: true);
+        results = fallback.map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>)).toList();
+      } else {
+        results = response
+            .map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>))
+            .toList();
+        dataDate = DateTime.tryParse(today);
+      }
+      
+      await _cachePrices(results, dataDate);
+      return (results, dataDate);
     } catch (e) {
       debugPrint('PriceService.fetchPrices error: $e');
       rethrow;
     }
   }
 
+  /// Caches the given list of prices along with a timestamp and the data's specific date.
+  Future<void> _cachePrices(List<VegetablePrice> prices, DateTime? dataDate) async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonList = prices.map((p) => p.toJson()).toList();
+    await prefs.setString('cached_prices', jsonEncode(jsonList));
+    if (dataDate != null) {
+      await prefs.setString('cached_data_date', dataDate.toIso8601String());
+    } else {
+      await prefs.remove('cached_data_date');
+    }
+    await prefs.setString('cached_prices_timestamp', DateTime.now().toIso8601String());
+  }
+
+  /// Loads cached prices and returns a record of (prices list, cache timestamp, data date).
+  Future<(List<VegetablePrice>, String, DateTime?)?> loadCachedPrices() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? jsonStr = prefs.getString('cached_prices');
+      final String? timestamp = prefs.getString('cached_prices_timestamp');
+      if (jsonStr == null || timestamp == null) return null;
+      
+      final List<dynamic> jsonList = jsonDecode(jsonStr);
+      final prices = jsonList.map((e) => VegetablePrice.fromJson(e as Map<String, dynamic>)).toList();
+      
+      final String? dataDateStr = prefs.getString('cached_data_date');
+      DateTime? dataDate = dataDateStr != null ? DateTime.tryParse(dataDateStr) : null;
+
+      return (prices, timestamp, dataDate);
+    } catch (e) {
+      debugPrint('PriceService.loadCachedPrices error: $e');
+      return null;
+    }
+  }
+
   Future<List<VegetablePrice>> searchPrices(String queryText) async {
     try {
       final q = queryText.toLowerCase();
-      final all = await fetchPrices();
+      final (all, _) = await fetchPrices();
       return all
           .where((p) =>
               p.itemEng.toLowerCase().contains(q) ||
@@ -149,7 +210,7 @@ class PriceService {
     // Optimized: filter by specific IDs
     // Using .in() with a list of IDs is cleaner and safer
     final response = await _client
-        .from('prices')
+        .from('prices_latest')
         .select()
         .filter('id', 'in', ids);
         

@@ -25,6 +25,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _selectedCategory = 'all';
   bool _isLoading = true;
   String? _error;
+  
+  bool _isOfflineCached = false;
+  String? _cacheTimestamp;
+  DateTime? _dataDate;
 
   final List<Map<String, String>> _categories = [
     {'key': 'all', 'label': 'All'},
@@ -42,23 +46,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _isOfflineCached = false;
+      _cacheTimestamp = null;
+      _dataDate = null;
     });
 
     try {
-      final prices = await _service.fetchPrices();
+      final (prices, dataDate) = await _service.fetchPrices();
       if (mounted) {
         setState(() {
           _prices = prices;
           _filtered = prices;
+          _dataDate = dataDate;
           _isLoading = false;
         });
       }
     } catch (e) {
+      final cached = await _service.loadCachedPrices();
       if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
+        if (cached != null) {
+          setState(() {
+            _prices = cached.$1;
+            _filtered = cached.$1;
+            _cacheTimestamp = cached.$2;
+            _dataDate = cached.$3;
+            _isOfflineCached = true;
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = e.toString();
+            _isLoading = false;
+          });
+        }
       }
     }
   }
@@ -260,6 +280,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// Formats a DateTime as "dd MMM yyyy"
+  String _formatDate(DateTime dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${dt.day.toString().padLeft(2, '0')} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  String _formatCacheTime(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString);
+      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return isoString;
+    }
+  }
+
   String _formatLastUpdated(bool isTamil) {
     if (_prices.isEmpty) return isTamil ? 'புதுப்பிக்கப்படுகிறது...' : 'Syncing...';
     final marketDate = _prices.first.date;
@@ -278,33 +313,81 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildUpdateBanner(bool isTamil) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: isTamil ? 'தினசரி சந்தை விலை  ' : 'Daily Market Rates  ',
-                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                  ),
-                  TextSpan(
-                    text: isTamil ? '${_prices.length} பொருட்கள்' : '${_prices.length} items',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
+    final now = DateTime.now();
+    final isToday = _dataDate != null && 
+        _dataDate!.year == now.year && 
+        _dataDate!.month == now.month && 
+        _dataDate!.day == now.day;
+
+    return Column(
+      children: [
+        if (_isOfflineCached && _cacheTimestamp != null)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            width: double.infinity,
+            color: Colors.amber.shade100,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.offline_bolt, size: 16, color: Colors.amber.shade800),
+                const SizedBox(width: 8),
+                Text(
+                  isTamil 
+                    ? 'ஆஃப்லைன்: கடைசியாக புதுப்பிக்கப்பட்டது ${_formatCacheTime(_cacheTimestamp!)}'
+                    : 'Cached — last updated ${_formatCacheTime(_cacheTimestamp!)}',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.amber.shade900),
+                ),
+              ],
             ),
           ),
-          Text(
-            _formatLastUpdated(isTamil),
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade600),
+        if (_dataDate != null && !isToday)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+            width: double.infinity,
+            color: Colors.blue.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.history, size: 16, color: Colors.blue.shade800),
+                const SizedBox(width: 8),
+                Text(
+                  isTamil 
+                    ? 'பழைய விலைப்பட்டியல்: ${_formatDate(_dataDate!)}'
+                    : 'Prices from ${_formatDate(_dataDate!)}',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.blue.shade900),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: isTamil ? 'தினசரி சந்தை விலை  ' : 'Daily Market Rates  ',
+                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                      ),
+                      TextSpan(
+                        text: isTamil ? '${_prices.length} பொருட்கள்' : '${_prices.length} items',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey.shade500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Text(
+                _formatLastUpdated(isTamil),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade600),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -383,7 +466,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       height: double.infinity,
                       cacheWidth: 300, // Optimize memory for thumbnails
                       errorBuilder: (context, error, stackTrace) {
-                        debugPrint('🖼️ Missing asset: $imagePath');
                         return Container(
                           color: AppColors.greenLight,
                           child: Center(

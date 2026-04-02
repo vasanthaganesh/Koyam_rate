@@ -26,9 +26,47 @@ jobs:
           npm install
           
       - name: Run Scraper
+        id: scrape  # id required to expose step outputs for the success alert
+        # Deployed migration to price_history table on 2026-04-02
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           # We don't need the actual .env file on GitHub because we're passing secrets directly
         run: |
-          node scraper/scrape_and_upsert.mjs
+          # Capture scraper stdout so we can extract the inserted row count
+          OUTPUT=$(node scraper/scrape_and_upsert.mjs 2>&1)
+          echo "$OUTPUT"
+          # Parse "Inserted New:  N" from scraper log and expose as step output
+          ROWS=$(echo "$OUTPUT" | grep -oP '(?<=Inserted New:\s{1,10})\d+' | tail -1)
+          echo "rows=${ROWS:-0}" >> $GITHUB_OUTPUT
+
+      # ── Success alert ────────────────────────────────────────────────────────
+      - name: Telegram — Scraper OK
+        if: success()  # fires only when all previous steps succeeded
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # loaded from GitHub secret
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # loaded from GitHub secret
+          ROWS: ${{ steps.scrape.outputs.rows }}                  # row count from scraper output
+        run: |
+          # Build and POST a short success message to Telegram
+          DATE=$(date -u '+%Y-%m-%d')
+          MSG="✅ *KoyamRate scraper OK*%0ADate: ${DATE}%0ARows inserted: ${ROWS}%0ARun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s --fail-with-body \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${MSG}\",\"parse_mode\":\"Markdown\"}"
+
+      # ── Failure alert ────────────────────────────────────────────────────────
+      - name: Telegram — Scraper FAILED
+        if: failure()  # fires only when a previous step in this job has failed
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  # loaded from GitHub secret
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}      # loaded from GitHub secret
+        run: |
+          # Build and POST a failure alert to Telegram
+          DATE=$(date -u '+%Y-%m-%d')
+          MSG="❌ *KoyamRate scraper FAILED*%0ARun date: ${DATE}%0ARun ID: ${{ github.run_id }}%0AView run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}%0A%0A⚠️ Check if the portal token endpoint changed."
+          curl -s --fail-with-body \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${TELEGRAM_CHAT_ID}\",\"text\":\"${MSG}\",\"parse_mode\":\"Markdown\"}"

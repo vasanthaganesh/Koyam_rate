@@ -3,10 +3,10 @@
  * ================================================
  * Fetches today's vegetable wholesale prices from the CMDA Chennai website,
  * normalizes the names to match the app's database/asset convention,
- * and upserts them into the Supabase 'prices' table.
+ * and inserts them into the Supabase 'price_history' table.
  *
  * Usage:
- *   node scraper/scrape_and_upsert.mjs              # scrape + upsert to Supabase
+ *   node scraper/scrape_and_upsert.mjs              # scrape + insert to Supabase
  *   node scraper/scrape_and_upsert.mjs --dry-run    # scrape only, print to console
  */
 
@@ -181,22 +181,33 @@ async function scrapeMarketData() {
 async function upsertToSupabase(rows) {
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  console.log(`📤 Upserting ${rows.length} rows to Supabase...`);
+  // // Changed to appending to match new insert pattern
+  console.log(`📤 Appending ${rows.length} rows to price_history table...`);
 
-  // Upsert with conflict on item_eng only (to keep exactly 1 row per vegetable)
+  // // Changed target table to 'price_history', added onConflict 'item_eng,date' and used ignoreDuplicates
+  // // Added select() to get actually inserted rows to log duplicate skips
   const { data, error } = await supabase
-    .from('prices')
+    .from('price_history')
     .upsert(rows, {
-      onConflict: 'item_eng',
-      ignoreDuplicates: false,
-    });
+      onConflict: 'item_eng,date',
+      ignoreDuplicates: true,
+    })
+    .select();
 
   if (error) {
-    throw new Error(`Supabase upsert failed: ${error.message}`);
+    throw new Error(`Supabase insert failed: ${error.message}`);
   }
 
+  // // Log actual inserted vs skipped based on response
+  const insertedCount = data ? data.length : 0;
+  const skippedCount = rows.length - insertedCount;
   const today = rows[0]?.date || 'unknown';
-  console.log(`✅ Successfully upserted ${rows.length} vegetables for ${today}`);
+  
+  console.log(`✅ Completed database operation for ${today}`);
+  console.log(`   - Total Scraped: ${rows.length}`);
+  console.log(`   - Inserted New:  ${insertedCount}`);
+  console.log(`   - Skipped Exists:${skippedCount}`);
+  
   return data;
 }
 
@@ -216,7 +227,7 @@ async function main() {
     }
 
     await upsertToSupabase(rows);
-    console.log(`\n🎉 Daily scraper completed – ${rows.length} vegetables updated at ${new Date().toISOString()}`);
+    console.log(`\n🎉 Daily scraper completed at ${new Date().toISOString()}`);
 
     // Small delay to ensure all async handles are closed before exit
     setTimeout(() => process.exit(0), 100);
