@@ -32,7 +32,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        shell: pwsh  # PowerShell — node/npm are in PATH here on Windows runner
+        shell: powershell  # PowerShell — node/npm are in PATH here on Windows runner
         run: |
           # Capture scraper output and parse inserted row count
           $OUTPUT = node scraper/scrape_and_upsert.mjs 2>&1
@@ -44,7 +44,7 @@ jobs:
       # ── Success alert ──────────────────────────────────────────────────────────
       - name: Telegram — Scraper OK
         if: success()  # fires only when all previous steps passed
-        shell: pwsh    # use PowerShell so Invoke-RestMethod is available
+        shell: powershell    # use PowerShell so Invoke-RestMethod is available
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -60,7 +60,7 @@ jobs:
       # ── Failure alert ──────────────────────────────────────────────────────────
       - name: Telegram — Scraper FAILED
         if: failure()  # fires only when a previous step in this job has failed
-        shell: pwsh    # use PowerShell so Invoke-RestMethod is available
+        shell: powershell    # use PowerShell so Invoke-RestMethod is available
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
