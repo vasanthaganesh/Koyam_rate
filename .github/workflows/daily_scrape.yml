@@ -53,9 +53,10 @@ jobs:
           $DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
           $RUN_URL = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           $TEXT = "✅ KoyamRate scraper OK`nDate: $DATE`nRows inserted: $env:ROWS`nRun: $RUN_URL"
-          $body = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          $bodyString = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyString)
           Invoke-RestMethod -Uri "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/sendMessage" `
-            -Method Post -ContentType 'application/json' -Body $body
+            -Method Post -ContentType 'application/json; charset=utf-8' -Body $bodyBytes
 
       # ── Failure alert ──────────────────────────────────────────────────────────
       - name: Telegram — Scraper FAILED
@@ -68,6 +69,7 @@ jobs:
           $DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
           $RUN_URL = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           $TEXT = "❌ KoyamRate scraper FAILED`nRun date: $DATE`nRun ID: ${{ github.run_id }}`nView run: $RUN_URL`n`n⚠️ Check if the portal token endpoint changed."
-          $body = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          $bodyString = @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $TEXT } | ConvertTo-Json
+          $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyString)
           Invoke-RestMethod -Uri "https://api.telegram.org/bot$env:TELEGRAM_BOT_TOKEN/sendMessage" `
-            -Method Post -ContentType 'application/json' -Body $body
+            -Method Post -ContentType 'application/json; charset=utf-8' -Body $bodyBytes
