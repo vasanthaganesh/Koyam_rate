@@ -47,3 +47,4 @@ flutter:
   assets:
     # Images migrated to Supabase Storage bucket "vegetable-images"
     - assets/icon.png
+    - assets/images/onboarding/

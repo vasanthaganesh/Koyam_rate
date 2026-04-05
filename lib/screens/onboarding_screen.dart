@@ -20,24 +20,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // Onboarding page data
   static const List<_OnboardingPageData> _pages = [
     _OnboardingPageData(
-      icon: Icons.storefront,
+      imagePath: 'assets/images/onboarding/page1.jpg',
       title: 'Daily Market Prices',
       subtitle: 'Fresh wholesale prices from Koyambedu\nupdated every morning at 8 AM.',
+      scale: 0.9, // Slightly smaller as the stall is very wide
     ),
     _OnboardingPageData(
-      icon: Icons.favorite,
+      imagePath: 'assets/images/onboarding/page2.jpg',
       title: 'Favorites & Watchlist',
       subtitle: 'Tap the heart to save your most-bought\nvegetables for quick access.',
+      scale: 1.0,
     ),
     _OnboardingPageData(
-      icon: Icons.show_chart,
+      imagePath: 'assets/images/onboarding/page3.jpg',
       title: 'Price Trend Chart',
       subtitle: 'See 7-day price history for any vegetable\nand spot the best time to buy.',
+      scale: 1.25, // Significantly larger to match other weights
     ),
     _OnboardingPageData(
-      icon: Icons.search,
+      imagePath: 'assets/images/onboarding/page4.jpg',
       title: 'Instant Search',
       subtitle: 'Find any vegetable instantly with\npowerful search and filters.',
+      scale: 1.0,
     ),
   ];
 
@@ -175,14 +179,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
 /// Data class for each onboarding page.
 class _OnboardingPageData {
-  final IconData icon;
+  final String imagePath;
   final String title;
   final String subtitle;
+  final double scale;
 
   const _OnboardingPageData({
-    required this.icon,
+    required this.imagePath,
     required this.title,
     required this.subtitle,
+    this.scale = 1.0,
   });
 }
 
@@ -199,18 +205,13 @@ class _OnboardingPage extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Icon with soft circular background
-          Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              data.icon,
-              size: 100,
-              color: AppColors.primary,
+          // Custom Illustration
+          Transform.scale(
+            scale: data.scale,
+            child: Image.asset(
+              data.imagePath,
+              height: 240,
+              fit: BoxFit.contain,
             ),
           ),
           const SizedBox(height: 48),
