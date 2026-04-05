@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/vegetable_price.dart';
 import '../services/price_service.dart';
+import '../services/rating_service.dart';
 import '../providers/favorites_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
+import '../widgets/vegetable_image.dart';
 import '../providers/language_provider.dart';
 import 'detail_screen.dart';
+import '../widgets/banner_ad_widget.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +32,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isOfflineCached = false;
   String? _cacheTimestamp;
   DateTime? _dataDate;
+
+  bool _ratingChecked = false; // Guard to only check once per session
 
   final List<Map<String, String>> _categories = [
     {'key': 'all', 'label': 'All'},
@@ -60,6 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _dataDate = dataDate;
           _isLoading = false;
         });
+        _triggerRatingCheck();
       }
     } catch (e) {
       final cached = await _service.loadCachedPrices();
@@ -104,11 +110,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _onSearch();
   }
 
+  /// Triggers the rating popup 2s after a successful data load (once per session).
+  void _triggerRatingCheck() {
+    if (_ratingChecked) return;
+    _ratingChecked = true;
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        RatingService.checkAndShowRating(context);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
+
+  /// Whether the data has loaded successfully (not loading, no error).
+  bool get _dataLoaded => !_isLoading && _error == null;
 
   @override
   Widget build(BuildContext context) {
@@ -123,6 +143,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _buildCategoryTabs(isTamil),
             _buildUpdateBanner(isTamil),
             Expanded(child: _buildBody(isTamil)),
+            // Banner ad — only shown when data is loaded successfully
+            if (_dataLoaded) const BannerAdWidget(),
           ],
         ),
       ),
@@ -434,7 +456,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildVegCard(VegetablePrice item, bool isTamil) {
     // Watch relevant part of state only
     final isFav = ref.watch(favoritesProvider.select(
-      (data) => data.value?.contains(item.id) ?? false
+      (data) => data.value?.contains(item.itemEng) ?? false
     ));
     final imagePath = _getImagePath(item.itemEng);
 
@@ -459,20 +481,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.asset(
-                      imagePath,
-                      fit: BoxFit.cover,
+                    child: VegetableImage(
+                      assetPath: imagePath,
+                      imageUrl: item.imageUrl,
                       width: double.infinity,
                       height: double.infinity,
-                      cacheWidth: 300, // Optimize memory for thumbnails
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: AppColors.greenLight,
-                          child: Center(
-                            child: Icon(Icons.local_florist, size: 40, color: AppColors.green.withValues(alpha: 0.5)),
-                          ),
-                        );
-                      },
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
@@ -487,7 +501,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         );
                         return;
                       }
-                      ref.read(favoritesProvider.notifier).toggleFavorite(item.id);
+                      ref.read(favoritesProvider.notifier).toggleFavorite(item.itemEng);
                     },
                     child: Container(
                       padding: const EdgeInsets.all(6),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/vegetable_price.dart';
 import '../services/price_service.dart';
 import '../theme/app_theme.dart';
@@ -8,6 +9,8 @@ import '../widgets/matte_frosted_glass_card.dart';
 import '../providers/price_alert_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../widgets/price_alert_sheet.dart';
+import '../widgets/vegetable_image.dart';
+import '../widgets/price_trend_chart.dart';
 
 class DetailScreen extends ConsumerWidget {
   final VegetablePrice item;
@@ -18,12 +21,11 @@ class DetailScreen extends ConsumerWidget {
     // Watch relevant providers
     ref.watch(priceAlertProvider);
     final isFav = ref.watch(favoritesProvider.select(
-      (data) => data.value?.contains(item.id) ?? false
+      (data) => data.value?.contains(item.itemEng) ?? false
     ));
     final hasAlert = ref.read(priceAlertProvider.notifier).hasActiveAlert(item.id);
     
     final service = PriceService();
-    final tip = service.getBargainTip(item.category ?? 'vegetables');
 
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
@@ -38,16 +40,10 @@ class DetailScreen extends ConsumerWidget {
                   SizedBox(
                     height: 280,
                     width: double.infinity,
-                    child: Image.asset(
-                      'assets/images/vegetables/${item.itemEng.replaceAll(' ', '_')}.png',
+                    child: VegetableImage(
+                      assetPath: 'assets/images/vegetables/${item.itemEng.replaceAll(' ', '_')}.png',
+                      imageUrl: item.imageUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          height: 280,
-                          color: AppColors.greenLight,
-                          child: const Center(child: Icon(Icons.local_florist, size: 60, color: AppColors.green)),
-                        );
-                      },
                     ),
                   ),
                   // Gradient overlay
@@ -94,7 +90,7 @@ class DetailScreen extends ConsumerWidget {
                           );
                           return;
                         }
-                        ref.read(favoritesProvider.notifier).toggleFavorite(item.id);
+                        ref.read(favoritesProvider.notifier).toggleFavorite(item.itemEng);
                       },
                       child: Container(
                         padding: const EdgeInsets.all(8),
@@ -164,39 +160,109 @@ class DetailScreen extends ConsumerWidget {
 
                     const SizedBox(height: 24),
 
-                    // ── Bargain Tip ──
-                    MatteFrostedGlassCard(
-                      backgroundColor: AppColors.greenLight.withValues(alpha: 0.3),
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppColors.green.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(14),
+                    // ── 7-Day Price Trend Chart ──
+                    FutureBuilder<List<PricePoint>>(
+                      future: service.fetchPriceHistory(item.itemEng),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const SizedBox(
+                            height: 180,
+                            child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5)),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return SizedBox(
+                            height: 180,
+                            child: Center(
+                              child: Text(
+                                'Could not load trend',
+                                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                              ),
                             ),
-                            child: const Icon(Icons.lightbulb_outline, color: AppColors.green, size: 22),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          );
+                        }
+
+                        final history = snapshot.data ?? [];
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Chart header with legend
+                            Row(
                               children: [
                                 const Text(
-                                  'Bargain Tip',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.green),
+                                  '7-Day Price Trend',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  tip,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.4),
+                                const Spacer(),
+                                // Legend
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(width: 12, height: 3, decoration: BoxDecoration(color: const Color(0xFF42A5F5), borderRadius: BorderRadius.circular(2))),
+                                    const SizedBox(width: 4),
+                                    Text('Min', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                    const SizedBox(width: 10),
+                                    Container(width: 12, height: 3, decoration: BoxDecoration(color: const Color(0xFFFFA726), borderRadius: BorderRadius.circular(2))),
+                                    const SizedBox(width: 4),
+                                    Text('Max', style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
+                                  ],
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 12),
+                            // Chart
+                            PriceTrendChart(history: history),
+                            const SizedBox(height: 12),
+                            // Summary row
+                            if (history.length >= 2) _buildSummaryRow(history),
+                          ],
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ── Bargain Tip (now data-driven) ──
+                    FutureBuilder<List<PricePoint>>(
+                      future: service.fetchPriceHistory(item.itemEng),
+                      builder: (context, snapshot) {
+                        final history = snapshot.data ?? [];
+                        final tip = service.generateTip(history);
+                        return MatteFrostedGlassCard(
+                          backgroundColor: AppColors.greenLight.withValues(alpha: 0.3),
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppColors.green.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: const Icon(Icons.lightbulb_outline, color: AppColors.green, size: 22),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Bargain Tip',
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.green),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      tip,
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700, height: 1.4),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
 
                     const SizedBox(height: 16),
@@ -250,11 +316,66 @@ class DetailScreen extends ConsumerWidget {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Share via WhatsApp placeholder
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Sharing coming soon!')),
-                          );
+                        onPressed: () async {
+                          try {
+                            final history = await service.fetchPriceHistory(item.itemEng);
+                            final allMin = history.isEmpty ? item.minPrice : history.map((p) => p.minPrice).reduce((a, b) => a < b ? a : b);
+                            final allMax = history.isEmpty ? item.maxPrice : history.map((p) => p.maxPrice).reduce((a, b) => a > b ? a : b);
+                            
+                            double pctChange = 0.0;
+                            if (history.isNotEmpty) {
+                              final firstAvg = history.first.avgPrice;
+                              final lastAvg = history.last.avgPrice;
+                              pctChange = firstAvg > 0 ? ((lastAvg - firstAvg) / firstAvg * 100) : 0.0;
+                            }
+
+                            String trendLabel;
+                            if (pctChange > 5) {
+                              trendLabel = '↑ Rising';
+                            } else if (pctChange < -5) {
+                              trendLabel = '↓ Falling';
+                            } else {
+                              trendLabel = '→ Stable';
+                            }
+
+                            final tip = service.generateTip(history);
+
+                            String emoji = '🥬';
+                            final lowerEng = item.itemEng.toLowerCase();
+                            if (lowerEng.contains('tomato')) emoji = '🍅';
+                            else if (lowerEng.contains('onion')) emoji = '🧅';
+                            else if (lowerEng.contains('potato')) emoji = '🥔';
+                            else if (lowerEng.contains('carrot')) emoji = '🥕';
+                            else if (lowerEng.contains('beans')) emoji = '🫘';
+                            else if (lowerEng.contains('lemon')) emoji = '🍋';
+                            else if (lowerEng.contains('cabbage')) emoji = '🥦';
+                            else if (lowerEng.contains('ginger') || lowerEng.contains('beetroot')) emoji = '🫚';
+                            else if (lowerEng.contains('drumstick')) emoji = '🌿';
+
+                            final text = '''$emoji ${item.itemTamil}
+${item.itemEng}
+
+Today's Price (Koyambedu):
+₹${item.minPrice.toInt()}–${item.maxPrice.toInt()} /kg  •  Wholesale
+
+7-Day Trend:
+Low ₹${allMin.toInt()}  •  High ₹${allMax.toInt()}  •  $trendLabel
+
+$tip
+
+Source: CMDA Chennai via KoyamRate app''';
+
+                            await Share.share(
+                              text,
+                              subject: '${item.itemEng} price today — KoyamRate',
+                            );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Could not open share sheet')),
+                              );
+                            }
+                          }
                         },
                         icon: const Icon(Icons.share, size: 18),
                         label: const Text('Share Price', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -285,6 +406,58 @@ class DetailScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// Builds the 7-day summary row: Low | High | Trend arrow
+  Widget _buildSummaryRow(List<PricePoint> history) {
+    final allMin = history.map((p) => p.minPrice).reduce((a, b) => a < b ? a : b);
+    final allMax = history.map((p) => p.maxPrice).reduce((a, b) => a > b ? a : b);
+    final firstAvg = history.first.avgPrice;
+    final lastAvg = history.last.avgPrice;
+    final pctChange = firstAvg > 0 ? ((lastAvg - firstAvg) / firstAvg * 100) : 0.0;
+
+    String arrow;
+    Color arrowColor;
+    if (pctChange > 5) {
+      arrow = '↑ ${pctChange.toStringAsFixed(0)}%';
+      arrowColor = Colors.red.shade600;
+    } else if (pctChange < -5) {
+      arrow = '↓ ${pctChange.abs().toStringAsFixed(0)}%';
+      arrowColor = Colors.green.shade600;
+    } else {
+      arrow = '→ stable';
+      arrowColor = Colors.grey.shade600;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _summaryItem('7d Low', '₹${allMin.toInt()}', const Color(0xFF42A5F5)),
+          Container(width: 1, height: 24, color: Colors.grey.shade300),
+          _summaryItem('7d High', '₹${allMax.toInt()}', const Color(0xFFFFA726)),
+          Container(width: 1, height: 24, color: Colors.grey.shade300),
+          _summaryItem('Trend', arrow, arrowColor),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryItem(String label, String value, Color valueColor) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: valueColor)),
+      ],
     );
   }
 }

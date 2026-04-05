@@ -5,6 +5,7 @@ import '../models/vegetable_price.dart';
 import '../providers/favorites_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
+import '../widgets/vegetable_image.dart';
 import '../providers/language_provider.dart';
 import 'detail_screen.dart';
 import 'auth_wrapper.dart';
@@ -152,26 +153,19 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                       decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.asset(
-                          imagePath,
-                          fit: BoxFit.cover,
+                        child: VegetableImage(
+                          assetPath: imagePath,
+                          imageUrl: item.imageUrl,
                           width: double.infinity,
                           height: double.infinity,
-                          cacheWidth: 300,
-                          errorBuilder: (context, error, stackTrace) {
-                            debugPrint('🖼️ Missing asset: \$imagePath');
-                            return Container(
-                              color: AppColors.greenLight,
-                              child: Center(child: Icon(Icons.local_florist, size: 40, color: AppColors.green.withValues(alpha: 0.5))),
-                            );
-                          },
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),
                     Positioned(
                       top: 6, right: 6,
                       child: GestureDetector(
-                        onTap: () => ref.read(favoritesProvider.notifier).toggleFavorite(item.id),
+                        onTap: () => ref.read(favoritesProvider.notifier).toggleFavorite(item.itemEng),
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),

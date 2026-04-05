@@ -3,7 +3,29 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/vegetable_price.dart';
-import 'dummy_data.dart';
+
+/// A single day's price record from the price_history table.
+class PricePoint {
+  final DateTime date;
+  final double minPrice;
+  final double maxPrice;
+
+  const PricePoint({
+    required this.date,
+    required this.minPrice,
+    required this.maxPrice,
+  });
+
+  double get avgPrice => (minPrice + maxPrice) / 2;
+
+  factory PricePoint.fromJson(Map<String, dynamic> json) {
+    return PricePoint(
+      date: DateTime.parse(json['date'] as String),
+      minPrice: (json['min_price'] as num).toDouble(),
+      maxPrice: (json['max_price'] as num).toDouble(),
+    );
+  }
+}
 
 /// Service layer for price data — now powered by Supabase.
 class PriceService {
@@ -14,6 +36,38 @@ class PriceService {
   static const String _languageKey = 'language';
 
   SupabaseClient get _client => Supabase.instance.client;
+
+  /// In-memory cache for image URLs to avoid repeated queries within one session.
+  Map<String, String>? _imageUrlCache;
+
+  /// Fetches all image URLs from the vegetable_images lookup table.
+  /// Returns a Map of item_eng -> image_url. Cached after first call.
+  Future<Map<String, String>> fetchImageUrls() async {
+    if (_imageUrlCache != null) return _imageUrlCache!;
+    try {
+      final response = await _client
+          .from('vegetable_images')
+          .select('item_eng, image_url');
+      _imageUrlCache = {
+        for (final row in (response as List))
+          (row['item_eng'] as String): (row['image_url'] as String),
+      };
+      return _imageUrlCache!;
+    } catch (e) {
+      debugPrint('PriceService.fetchImageUrls error: $e');
+      return {};
+    }
+  }
+
+  /// Merges image URLs from the lookup table into a list of VegetablePrice objects.
+  Future<List<VegetablePrice>> _mergeImageUrls(List<VegetablePrice> prices) async {
+    final imageMap = await fetchImageUrls();
+    if (imageMap.isEmpty) return prices;
+    return prices.map((p) {
+      final url = imageMap[p.itemEng];
+      return (url != null && p.imageUrl == null) ? p.copyWith(imageUrl: url) : p;
+    }).toList();
+  }
 
   // ── Prices (Supabase) ──
 
@@ -40,7 +94,7 @@ class PriceService {
             .limit(1);
 
         if (maxDateRes.isEmpty) {
-          return ([], null);
+          return (<VegetablePrice>[], null);
         }
 
         final fallbackDateStr = maxDateRes[0]['date'] as String;
@@ -64,7 +118,9 @@ class PriceService {
             .toList();
         dataDate = DateTime.tryParse(today);
       }
-      
+      // Merge image URLs from the dedicated vegetable_images table
+      results = await _mergeImageUrls(results);
+
       await _cachePrices(results, dataDate);
       return (results, dataDate);
     } catch (e) {
@@ -122,13 +178,52 @@ class PriceService {
     }
   }
 
-  List<double> getTrend(String itemId) => DummyData.getTrend(itemId);
+  /// Fetches historical price data for a given item from the price_history table.
+  /// Returns an empty list on any error — never throws.
+  Future<List<PricePoint>> fetchPriceHistory(String itemEng, {int days = 7}) async {
+    try {
+      final response = await _client
+          .from('price_history')
+          .select('date, min_price, max_price')
+          .eq('item_eng', itemEng)
+          .order('date', ascending: true)
+          .limit(days);
 
-  String getBargainTip(String category) => DummyData.getBargainTip(category);
+      return (response as List)
+          .map((row) => PricePoint.fromJson(row as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('PriceService.fetchPriceHistory error: $e');
+      return [];
+    }
+  }
+
+  /// Generates a human-readable bargain tip from real price history.
+  String generateTip(List<PricePoint> history) {
+    if (history.isEmpty) return 'No price history yet — check back tomorrow.';
+    if (history.length == 1) return 'Only 1 day of data — trend analysis needs more time.';
+
+    final latest = history.last;
+    final first = history.first;
+    final latestAvg = latest.avgPrice;
+    final firstAvg = first.avgPrice;
+
+    // Calculate 7-day average
+    final totalAvg = history.map((p) => p.avgPrice).reduce((a, b) => a + b) / history.length;
+    final diff = ((latestAvg - totalAvg) / totalAvg * 100);
+
+    if (diff < -5) {
+      return 'Prices are ${diff.abs().toStringAsFixed(0)}% below the ${history.length}-day average — good time to buy!';
+    } else if (diff > 5) {
+      return 'Prices are ${diff.toStringAsFixed(0)}% above the ${history.length}-day average — consider waiting.';
+    } else {
+      return 'Prices are stable around ₹${totalAvg.toStringAsFixed(0)}/kg over the past ${history.length} days.';
+    }
+  }
 
   // ── Favorites ──
 
-  Future<List<String>> getFavoriteIds() async {
+  Future<List<String>> getFavoriteItemEngs() async {
     final user = _client.auth.currentUser;
     if (user == null) {
       // Guest: use local SharedPreferences
@@ -140,54 +235,54 @@ class PriceService {
       // Logged-in: fetch from Supabase
       final List<dynamic> response = await _client
           .from('favorites')
-          .select('item_id')
+          .select('item_eng')
           .eq('user_id', user.id);
       
-      return response.map((row) => row['item_id'] as String).toList();
+      return response.map((row) => row['item_eng'] as String).toList();
     } on PostgrestException catch (e) {
       // Handle the case where the table doesn't exist yet
       if (e.code == 'PGRST204' || e.code == 'PGRST205') {
-        debugPrint('PriceService.getFavoriteIds: favorites table not found. Returning empty list.');
+        debugPrint('PriceService.getFavoriteItemEngs: favorites table not found. Returning empty list.');
         return [];
       }
-      debugPrint('PriceService.getFavoriteIds database error: ${e.message}');
+      debugPrint('PriceService.getFavoriteItemEngs database error: ${e.message}');
       return [];
     } catch (e) {
-      debugPrint('PriceService.getFavoriteIds generic error: $e');
+      debugPrint('PriceService.getFavoriteItemEngs generic error: $e');
       return [];
     }
   }
 
-  Future<bool> toggleFavorite(String itemId) async {
+  Future<bool> toggleFavorite(String itemEng) async {
     final user = _client.auth.currentUser;
     if (user == null) {
       // Local fallback for guests
       final prefs = await SharedPreferences.getInstance();
-      final ids = prefs.getStringList(_favoritesKey) ?? [];
+      final engs = prefs.getStringList(_favoritesKey) ?? [];
       
-      if (ids.contains(itemId)) {
-        ids.remove(itemId);
-        await prefs.setStringList(_favoritesKey, ids);
+      if (engs.contains(itemEng)) {
+        engs.remove(itemEng);
+        await prefs.setStringList(_favoritesKey, engs);
         return false;
       } else {
-        ids.add(itemId);
-        await prefs.setStringList(_favoritesKey, ids);
+        engs.add(itemEng);
+        await prefs.setStringList(_favoritesKey, engs);
         return true;
       }
     }
 
     // Supabase logic for logged-in users
     try {
-      final ids = await getFavoriteIds();
-      if (ids.contains(itemId)) {
+      final engs = await getFavoriteItemEngs();
+      if (engs.contains(itemEng)) {
         await _client.from('favorites')
             .delete()
-            .match({'user_id': user.id, 'item_id': itemId});
+            .match({'user_id': user.id, 'item_eng': itemEng});
         return false;
       } else {
         await _client.from('favorites').insert({
           'user_id': user.id,
-          'item_id': itemId,
+          'item_eng': itemEng,
         });
         return true;
       }
@@ -204,17 +299,19 @@ class PriceService {
   }
 
   Future<List<VegetablePrice>> getFavorites() async {
-    final ids = await getFavoriteIds();
-    if (ids.isEmpty) return [];
+    final engs = await getFavoriteItemEngs();
+    if (engs.isEmpty) return [];
     
     // Optimized: filter by specific IDs
     // Using .in() with a list of IDs is cleaner and safer
     final response = await _client
         .from('prices_latest')
         .select()
-        .filter('id', 'in', ids);
+        .filter('item_eng', 'in', engs);
         
-    return (response as List).map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>)).toList();
+    return await _mergeImageUrls(
+      (response as List).map((row) => VegetablePrice.fromJson(row as Map<String, dynamic>)).toList(),
+    );
   }
 
   // ── Settings ──

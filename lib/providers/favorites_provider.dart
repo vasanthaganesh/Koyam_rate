@@ -10,25 +10,25 @@ class FavoritesNotifier extends AsyncNotifier<List<String>> {
   @override
   Future<List<String>> build() async {
     // Fetch initial favorites from Supabase/Local
-    return _service.getFavoriteIds();
+    return _service.getFavoriteItemEngs();
   }
 
-  Future<void> toggleFavorite(String itemId) async {
+  Future<void> toggleFavorite(String itemEng) async {
     final previousState = state.value ?? [];
-    final isCurrentlyFavorite = previousState.contains(itemId);
+    final isCurrentlyFavorite = previousState.contains(itemEng);
 
     // 1. OPTIMISTIC UPDATE: Update UI immediately
     final updatedList = List<String>.from(previousState);
     if (isCurrentlyFavorite) {
-      updatedList.remove(itemId);
+      updatedList.remove(itemEng);
     } else {
-      updatedList.add(itemId);
+      updatedList.add(itemEng);
     }
     state = AsyncValue.data(updatedList);
 
     try {
       // 2. BACKGROUND SYNC: Perform the actual DB/Local operation
-      final wasAdded = await _service.toggleFavorite(itemId);
+      final wasAdded = await _service.toggleFavorite(itemEng);
       
       // Double check consistency if needed, but usually Supabase response is the truth
       // In a more complex app, we might want to refresh from the server here
@@ -39,8 +39,8 @@ class FavoritesNotifier extends AsyncNotifier<List<String>> {
     }
   }
 
-  bool isFavorite(String itemId) {
-    return state.value?.contains(itemId) ?? false;
+  bool isFavorite(String itemEng) {
+    return state.value?.contains(itemEng) ?? false;
   }
 }
 
@@ -48,10 +48,10 @@ final favoritesProvider = AsyncNotifierProvider<FavoritesNotifier, List<String>>
 
 // Helper provider to get the actual vegetable details for favorites
 final favoriteItemsProvider = FutureProvider<List<VegetablePrice>>((ref) async {
-  final ids = ref.watch(favoritesProvider).value ?? [];
-  if (ids.isEmpty) return [];
+  final engs = ref.watch(favoritesProvider).value ?? [];
+  if (engs.isEmpty) return [];
   
   final service = PriceService();
-  final all = await service.fetchPrices();
-  return all.where((p) => ids.contains(p.id)).toList();
+  final (all, _) = await service.fetchPrices();
+  return all.where((p) => engs.contains(p.itemEng)).toList();
 });

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/favorites_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/auth_wrapper.dart';
+import 'screens/onboarding_screen.dart';
+import 'services/rating_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'providers/price_alert_provider.dart';
@@ -119,6 +123,8 @@ void main() async {
     anonKey: supabaseAnonKey,
   );
 
+  // Initialize AdMob SDK
+  await MobileAds.instance.initialize();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -136,13 +142,71 @@ void main() async {
 class KoyamRateApp extends StatelessWidget {
   const KoyamRateApp({super.key});
 
+  /// Check if onboarding has been completed.
+  /// Also increments app_open_count for the rating prompt (only after onboarding).
+  Future<bool> _isOnboardingComplete() async {
+    final prefs = await SharedPreferences.getInstance();
+    final done = prefs.getBool('onboarding_complete') ?? false;
+    if (done) {
+      // Increment open count for rating trigger (never on first launch)
+      await RatingService.incrementOpenCount();
+    }
+    return done;
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'KoyamRate',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: const AuthWrapper(),
+      home: FutureBuilder<bool>(
+        future: _isOnboardingComplete(),
+        builder: (context, snapshot) {
+          // Splash screen while loading SharedPreferences
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const _SplashScreen();
+          }
+          final onboardingDone = snapshot.data ?? false;
+          return onboardingDone
+              ? const AuthWrapper()
+              : const OnboardingScreen();
+        },
+      ),
+    );
+  }
+}
+
+/// Minimal splash screen shown while SharedPreferences loads.
+class _SplashScreen extends StatelessWidget {
+  const _SplashScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon.png',
+              width: 80,
+              height: 80,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'KoyamRate',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -43,6 +43,21 @@ class VegetablePrice {
     );
   }
 
+  /// Returns a copy with the given fields replaced.
+  VegetablePrice copyWith({String? imageUrl}) {
+    return VegetablePrice(
+      id: id,
+      date: date,
+      itemTamil: itemTamil,
+      itemEng: itemEng,
+      minPrice: minPrice,
+      maxPrice: maxPrice,
+      category: category,
+      imageUrl: imageUrl ?? this.imageUrl,
+      updatedAt: updatedAt,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

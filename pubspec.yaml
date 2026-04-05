@@ -24,6 +24,9 @@ dependencies:
   permission_handler: ^11.3.1
   timezone: ^0.11.0
   workmanager: ^0.9.0+3
+  fl_chart: ^0.70.2
+  in_app_review: ^2.0.10
+  share_plus: ^10.0.0
 
 dev_dependencies:
   flutter_test:
@@ -42,6 +45,5 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
-    - assets/images/vegetables/
+    # Images migrated to Supabase Storage bucket "vegetable-images"
     - assets/icon.png

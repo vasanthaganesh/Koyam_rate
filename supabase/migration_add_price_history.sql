@@ -7,6 +7,7 @@ ALTER INDEX IF EXISTS idx_prices_category RENAME TO idx_price_history_category;
 
 -- 2. Drop the original primary key / unique constraint on item_eng that prevented historical entries
 ALTER TABLE public.price_history DROP CONSTRAINT IF EXISTS prices_item_eng_key;
+ALTER TABLE public.price_history DROP CONSTRAINT IF EXISTS prices_item_eng_unique;
 
 -- 3. Add a unique constraint on (item_eng, date) to allow idempotent scrape retries
 ALTER TABLE public.price_history ADD CONSTRAINT price_history_item_eng_date_key UNIQUE (item_eng, date);
