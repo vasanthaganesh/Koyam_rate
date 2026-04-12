@@ -130,6 +130,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Whether the data has loaded successfully (not loading, no error).
   bool get _dataLoaded => !_isLoading && _error == null;
 
+  bool isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  Widget _buildStaleBanner() {
+    final isStale = _dataDate != null && !isSameDay(_dataDate!, DateTime.now());
+    if (!isStale) return const SizedBox.shrink();
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final formattedDate = '${_dataDate!.day.toString().padLeft(2, '0')} ${months[_dataDate!.month - 1]}';
+
+    return Container(
+      color: const Color(0xFFFFA726).withOpacity(0.15),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, size: 14, color: Color(0xFFFFA726)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Showing prices from $formattedDate — live data unavailable',
+              style: const TextStyle(fontSize: 12, color: Color(0xFFFFA726)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isTamil = ref.watch(languageProvider);
@@ -140,6 +170,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             _buildHeader(),
             _buildSearchBar(isTamil),
+            _buildStaleBanner(),
             _buildCategoryTabs(isTamil),
             _buildUpdateBanner(isTamil),
             Expanded(child: _buildBody(isTamil)),

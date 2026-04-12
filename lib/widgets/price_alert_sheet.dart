@@ -23,7 +23,7 @@ class _PriceAlertSheetState extends ConsumerState<PriceAlertSheet> {
     super.initState();
     // Pre-fill if there's an existing alert
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final alert = ref.read(priceAlertProvider.notifier).getAlertFor(widget.item.id);
+      final alert = ref.read(priceAlertProvider.notifier).getAlertFor(widget.item.itemEng);
       if (alert != null) {
         if (alert.minPrice != null) _minCtrl.text = alert.minPrice.toString();
         if (alert.maxPrice != null) _maxCtrl.text = alert.maxPrice.toString();

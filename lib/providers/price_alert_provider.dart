@@ -279,7 +279,7 @@ class PriceAlertNotifier extends AsyncNotifier<List<PriceAlert>> {
 
     final data = {
       'user_id': user.id,
-      'item_id': item.id,
+      'item_id': item.itemEng,
       'item_name_eng': item.itemEng,
       'item_name_tamil': item.itemTamil,
       'min_price': minPrice,
@@ -310,12 +310,12 @@ class PriceAlertNotifier extends AsyncNotifier<List<PriceAlert>> {
     }
   }
 
-  bool hasActiveAlert(String itemId) {
-    return state.value?.any((a) => a.itemId == itemId && a.notifyActive) ?? false;
+  bool hasActiveAlert(String itemEng) {
+    return state.value?.any((a) => a.itemEng == itemEng && a.notifyActive) ?? false;
   }
 
-  PriceAlert? getAlertFor(String itemId) {
-    return state.value?.where((a) => a.itemId == itemId).firstOrNull;
+  PriceAlert? getAlertFor(String itemEng) {
+    return state.value?.where((a) => a.itemEng == itemEng).firstOrNull;
   }
 }
 

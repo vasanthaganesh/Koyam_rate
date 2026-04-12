@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../widgets/matte_frosted_glass_card.dart';
 import '../providers/language_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'auth_wrapper.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
@@ -115,6 +116,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   // Static Tamil fallback for "Guest"
   String get _displayNameTamil => _isLoggedIn ? '' : 'விருந்தினர்';
+
+  String toTitleCase(String name) {
+    return name.split(' ')
+      .map((w) => w.isEmpty ? w :
+        w[0].toUpperCase() + w.substring(1).toLowerCase())
+      .join(' ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -319,8 +327,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5),
                     ),
                   Text(
-                    _displayName.toUpperCase(), // Using uppercase for a more premium name tag look
+                    toTitleCase(_displayName),
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: _displayNameTamil.isEmpty ? 28 : 16, 
                       fontWeight: _displayNameTamil.isEmpty ? FontWeight.w900 : FontWeight.w500, 
@@ -421,29 +431,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               icon: Icons.privacy_tip_outlined,
               iconColor: Colors.teal,
               label: isTamil ? 'தனியுரிமைக் கொள்கை' : 'Privacy Policy',
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('Privacy Policy'),
-                    content: const SingleChildScrollView(
-                      child: Text(
-                        'KoyamRate respects your privacy. We collect:\n\n'
-                        '• Email: Used only for authentication via Google.\n'
-                        '• Location: Used only to show your current city on this screen. We do not store your exact GPS coordinates.\n'
-                        '• Price Alerts: We store your alert preferences to notify you of price changes.\n\n'
-                        'Your data is stored securely on Supabase and is never shared with third parties.',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Close'),
-                      ),
-                    ],
-                  ),
+              onTap: () async {
+                final uri = Uri.parse(
+                  'https://sites.google.com/view/koyamrateprivacypolicy'
                 );
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Could not open Privacy Policy')),
+                    );
+                  }
+                }
               },
             ),
             const SizedBox(height: 32),

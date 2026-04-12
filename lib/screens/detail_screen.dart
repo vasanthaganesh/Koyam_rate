@@ -23,7 +23,7 @@ class DetailScreen extends ConsumerWidget {
     final isFav = ref.watch(favoritesProvider.select(
       (data) => data.value?.contains(item.itemEng) ?? false
     ));
-    final hasAlert = ref.read(priceAlertProvider.notifier).hasActiveAlert(item.id);
+    final hasAlert = ref.read(priceAlertProvider.notifier).hasActiveAlert(item.itemEng);
     
     final service = PriceService();
 

@@ -189,7 +189,12 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary, letterSpacing: 0.5),
               ),
               const SizedBox(height: 6),
-              Text('₹${item.avgPrice.toInt()}/kg', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)),
+              Text(
+                item.minPrice == item.maxPrice
+                    ? '₹${item.minPrice.toInt()}/kg'
+                    : '₹${item.minPrice.toInt()}–${item.maxPrice.toInt()}/kg',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary),
+              ),
             ],
           ),
         );

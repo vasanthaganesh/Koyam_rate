@@ -47,4 +47,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android release secrets
+android/key.properties
+android/app/*.jks
 **/node_modules/
